@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice AI — Real-Time Pipeline</title>
+  <meta name="description" content="Low-latency real-time voice AI pipeline with Deepgram STT, GPT-4o, and Deepgram TTS." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="index.css" />
+</head>
+<body>
+
+  <!-- ───── Background orbs ───── -->
+  <div class="bg-orb orb-1" aria-hidden="true"></div>
+  <div class="bg-orb orb-2" aria-hidden="true"></div>
+  <div class="bg-orb orb-3" aria-hidden="true"></div>
+
+  <!-- ───── Main layout ───── -->
+  <div class="app-shell">
+
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-mark">
+        <span class="logo-icon">⬡</span>
+        <span class="logo-text">VoiceAI</span>
+      </div>
+      <div class="header-badge">Live Pipeline</div>
+    </header>
+
+    <!-- Central panel -->
+    <main class="main-panel">
+
+      <!-- Status row -->
+      <div class="status-row">
+        <span id="status-dot" class="status-dot dot-idle" aria-live="polite"></span>
+        <span id="status-label" class="status-label">Idle</span>
+      </div>
+
+      <!-- Waveform canvas -->
+      <div class="waveform-container" aria-label="Audio waveform visualizer">
+        <canvas id="waveform"></canvas>
+      </div>
+
+      <!-- Control buttons -->
+      <div class="control-row">
+        <button id="start-btn" class="btn btn-primary" aria-label="Start voice session">
+          <span class="btn-icon">▶</span>
+          Start
+        </button>
+        <button id="interrupt-btn" class="btn btn-warning" disabled aria-label="Interrupt AI speech">
+          <span class="btn-icon">⚡</span>
+          Interrupt
+        </button>
+        <button id="stop-btn" class="btn btn-danger" disabled aria-label="Stop voice session">
+          <span class="btn-icon">■</span>
+          Stop
+        </button>
+      </div>
+
+      <!-- Transcript card -->
+      <section class="card card-transcript" id="transcript-card" style="display:none;" aria-live="polite">
+        <div class="card-label">
+          <span class="card-icon">🎙</span> You said
+        </div>
+        <p id="transcript-text" class="card-text"></p>
+      </section>
+
+      <!-- Response card -->
+      <section class="card card-response" id="response-card" style="display:none;" aria-live="polite">
+        <div class="card-label">
+          <span class="card-icon">🤖</span> AI response
+        </div>
+        <p id="response-text" class="card-text"></p>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <span>Deepgram STT + GPT-4o + Deepgram TTS · Raw PCM 16-bit · No LiveKit</span>
+    </footer>
+
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
