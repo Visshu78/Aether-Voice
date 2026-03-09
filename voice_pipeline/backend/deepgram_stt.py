@@ -18,7 +18,8 @@ DEEPGRAM_URL = (
     f"&sample_rate={SAMPLE_RATE}"
     f"&channels={CHANNELS}"
     f"&interim_results=true"
-    f"&endpointing=300"
+    f"&vad_events=true"
+    f"&endpointing=150"
     f"&keepalive=true"
 )
 

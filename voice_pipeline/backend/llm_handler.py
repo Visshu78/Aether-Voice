@@ -17,18 +17,21 @@ from config import LOCAL_LLM_API_KEY, LOCAL_LLM_BASE_URL, LLM_MODEL
 
 logger = logging.getLogger(__name__)
 
-# Sentence-ending punctuation pattern
-_SENTENCE_END = re.compile(r'(?<=[.!?\n])\s+')
+# Sentence-ending punctuation pattern. Added a comma so we can yield
+# the first chunk even faster (e.g. "Well," -> TTS fires instantly)
+_SENTENCE_END = re.compile(r'(?<=[.!?,\n])\s+')
 
 # Emit a chunk after this many words even if no punctuation has arrived yet.
 WORD_CHUNK_THRESHOLD = 10
 
 SYSTEM_PROMPT = (
-    "You are a helpful, concise voice assistant. "
-    "Respond in short, natural sentences. "
-    "Avoid markdown, bullet points, or special characters. "
-    "Keep responses under 3 sentences unless asked for more detail. "
-    "CRITICAL: Do not output any <think> tags or reasoning steps. Output only the final response."
+    "You are a fast, highly conversational voice assistant. "
+    "Respond with EXTREMELY punchy, abrupt, short sentences. "
+    "CRITICAL RULES:\n"
+    "1. Never use filler words like 'Ah', 'Well', 'Hmm', 'Let me see'. Start your answer immediately.\n"
+    "2. Never use markdown (*, **, #), bullet points, or special characters.\n"
+    "3. Do not output any <think> tags or reasoning steps. Output only the final response text.\n"
+    "4. Keep responses strictly under 2 sentences unless complex detail is requested."
 )
 
 
