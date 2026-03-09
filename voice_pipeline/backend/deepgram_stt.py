@@ -19,6 +19,7 @@ DEEPGRAM_URL = (
     f"&channels={CHANNELS}"
     f"&interim_results=true"
     f"&endpointing=300"
+    f"&keepalive=true"
 )
 
 
@@ -50,7 +51,8 @@ async def run_stt(
             DEEPGRAM_URL, 
             additional_headers=headers, 
             open_timeout=10, 
-            ssl=ssl_context
+            ssl=ssl_context,
+            ping_interval=None,
         ) as dg_ws:
             print("DEBUGGER AGENT: ✅ Connected to Deepgram STT — AI is now listening")
             logger.info("🎙️  Connected to Deepgram STT")

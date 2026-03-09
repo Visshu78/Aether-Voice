@@ -171,12 +171,15 @@ async def ws_audio(websocket: WebSocket):
         if interrupt._active_tasks:
             await interrupt.trigger()
 
+    # Dedicated event for STT so it survives turn interruptions
+    client_disconnect_event = asyncio.Event()
+
     # --- STT task ---
     stt_task = asyncio.create_task(
         run_stt(
             audio_queue,
             transcript_queue,
-            interrupt.cancel_event,
+            client_disconnect_event,
             on_speech_started=on_speech_started,
         )
     )
@@ -264,6 +267,7 @@ async def ws_audio(websocket: WebSocket):
     finally:
         # Cancel all tasks
         interrupt.cancel_event.set()
+        client_disconnect_event.set()
         for t in [stt_task, consumer_task]:
             if not t.done():
                 t.cancel()
