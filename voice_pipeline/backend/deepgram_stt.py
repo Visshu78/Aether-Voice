@@ -1,13 +1,8 @@
-"""
-deepgram_stt.py — Deepgram Live STT consumer.
-
-Pulls PCM chunks from AudioQueue, streams to Deepgram,
-publishes final transcripts to transcript_queue.
-Detects mid-playback speech → triggers interruption.
-"""
 import asyncio
 import json
 import logging
+import traceback
+import ssl
 
 import websockets
 
@@ -23,8 +18,7 @@ DEEPGRAM_URL = (
     f"&sample_rate={SAMPLE_RATE}"
     f"&channels={CHANNELS}"
     f"&interim_results=true"
-    f"&endpointing=100"
-    f"&utterance_end_ms=600"
+    f"&endpointing=300"
 )
 
 
@@ -34,6 +28,7 @@ async def run_stt(
     cancel_event: asyncio.Event,
     on_speech_started,          # async callable — fired on interim speech
 ):
+    print("DEBUGGER AGENT: 🎙️ STT thread starting...")
     """
     Connect to Deepgram live STT and bridge AudioQueue → transcript_queue.
 
@@ -46,8 +41,18 @@ async def run_stt(
     """
     headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
 
+    # Use standard SSL context (pip-system-certs handles Windows certs)
+    ssl_context = ssl.create_default_context()
+
     try:
-        async with websockets.connect(DEEPGRAM_URL, extra_headers=headers) as dg_ws:
+        print(f"DEBUGGER AGENT: 📡 Connecting to Deepgram... (URL: {DEEPGRAM_URL[:50]}...)")
+        async with websockets.connect(
+            DEEPGRAM_URL, 
+            additional_headers=headers, 
+            open_timeout=10, 
+            ssl=ssl_context
+        ) as dg_ws:
+            print("DEBUGGER AGENT: ✅ Connected to Deepgram STT — AI is now listening")
             logger.info("🎙️  Connected to Deepgram STT")
 
             async def _sender():
@@ -111,4 +116,6 @@ async def run_stt(
     except asyncio.CancelledError:
         logger.info("STT task cancelled")
     except Exception as e:
+        print(f"CRITICAL STT ERROR: {e}")
+        traceback.print_exc()
         logger.error(f"Deepgram STT error: {e}", exc_info=True)

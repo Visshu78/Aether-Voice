@@ -42,8 +42,14 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print("\n" + "="*50)
+    print("🚀  DEBUGGER AGENT: VOICE PIPELINE STARTING  🚀")
+    print("="*50 + "\n")
     logger.info("🚀 Voice Pipeline started — keys OK")
     yield
+    print("\n" + "="*50)
+    print("🛑  DEBUGGER AGENT: VOICE PIPELINE SHUTDOWN  🛑")
+    print("="*50 + "\n")
     logger.info("🛑 Voice Pipeline shutdown")
 
 
@@ -73,8 +79,12 @@ app.add_middleware(
 async def _safe_send_text(ws: WebSocket, data: dict) -> None:
     try:
         if ws.client_state == WebSocketState.CONNECTED:
+            # print(f"DEBUGGER AGENT: 📤 Sending JSON: {data.get('type')}")
             await ws.send_text(json.dumps(data))
-    except Exception:
+        else:
+            print(f"DEBUGGER AGENT: ⚠️  Cannot send JSON, ws state is {ws.client_state}")
+    except Exception as e:
+        print(f"DEBUGGER AGENT: ❌ Error sending JSON: {e}")
         pass
 
 
@@ -82,7 +92,10 @@ async def _safe_send_bytes(ws: WebSocket, data: bytes) -> None:
     try:
         if ws.client_state == WebSocketState.CONNECTED:
             await ws.send_bytes(data)
-    except Exception:
+        else:
+             print(f"DEBUGGER AGENT: ⚠️  Cannot send bytes, ws state is {ws.client_state}")
+    except Exception as e:
+        print(f"DEBUGGER AGENT: ❌ Error sending bytes: {e}")
         pass
 
 
@@ -140,6 +153,7 @@ async def _run_pipeline(
 @app.websocket("/ws/audio")
 async def ws_audio(websocket: WebSocket):
     await websocket.accept()
+    print("DEBUGGER AGENT: ✅ WebSocket accepted")
     logger.info("🔌 WebSocket connected")
 
     audio_queue = AudioQueue(maxsize=200)
@@ -202,33 +216,46 @@ async def ws_audio(websocket: WebSocket):
 
     # --- Receive loop: WebSocket → audio_queue ---
     await _safe_send_text(websocket, {"type": "state", "value": "listening"})
+    
+    # Debug tracking
+    format_verified = False
+    chunk_count = 0
+
     try:
         while True:
             try:
                 message = await websocket.receive()
+                # Debugger Agent: Log every message type
+                m_type = message.get("type")
+                if m_type != "websocket.receive": # excessive for binary
+                     pass # handled below
             except RuntimeError:
                 # Socket already disconnected
+                print("DEBUGGER AGENT: ❌ WebSocket runtime error")
                 break
 
-            # Starlette sends {"type": "websocket.disconnect"} on close
-            if message.get("type") == "websocket.disconnect":
-                break
-
-            if "bytes" in message and message["bytes"]:
-                # logger.debug(f"Received {len(message['bytes'])} bytes")
-                # Add a temporary print to see if audio is even arriving
-                if not hasattr(ws_audio, 'chunk_count'): ws_audio.chunk_count = 0
-                ws_audio.chunk_count += 1
-                if ws_audio.chunk_count % 50 == 0:
-                    print(f"DEBUG: Received {ws_audio.chunk_count} audio chunks")
+            # Debugger Agent: Log every single message structure
+            if "bytes" in message:
+                # Chunk logs (every 50)
+                if not format_verified:
+                    print(f"DEBUGGER AGENT: 📥 RECEIVED INITIAL BINARY CHUNK ({len(message['bytes'])} bytes)")
+                    format_verified = True
+                
+                chunk_count += 1
+                if chunk_count % 50 == 0:
+                    print(f"DEBUGGER AGENT: 📥 Audio Chunks received: {chunk_count}")
                 await audio_queue.put(message["bytes"])
+
             elif "text" in message:
+                print(f"DEBUGGER AGENT: 📥 RECEIVED TEXT: {message['text'][:100]}")
                 try:
                     ctrl = json.loads(message["text"])
                     if ctrl.get("type") == "interrupt":
                         await interrupt.trigger()
                 except json.JSONDecodeError:
                     pass
+            else:
+                print(f"DEBUGGER AGENT: 📥 RECEIVED UNKNOWN MSG TYPE: {message.get('type')} Keys: {list(message.keys())}")
 
     except WebSocketDisconnect:
         logger.info("🔌 Client disconnected")

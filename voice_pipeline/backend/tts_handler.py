@@ -9,6 +9,7 @@ before the full sentence audio is ready.
 import asyncio
 import logging
 import struct
+import traceback
 
 import httpx
 
@@ -87,5 +88,7 @@ async def synthesize_sentence(
         logger.error(f"TTS HTTP error {e.response.status_code}: {e.response.text}")
         return False
     except Exception as e:
+        print(f"CRITICAL TTS ERROR: {e}")
+        traceback.print_exc()
         logger.error(f"TTS error: {e}", exc_info=True)
         return False

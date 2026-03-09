@@ -17,8 +17,9 @@ def _require(key: str) -> str:
 
 DEEPGRAM_API_KEY: str = _require("DEEPGRAM_API_KEY")
 
-# Gemini API
-GEMINI_API_KEY: str = _require("GEMINI_API_KEY")
+# Local LLM API
+LOCAL_LLM_API_KEY: str = _require("LOCAL_LLM_API_KEY")
+LOCAL_LLM_BASE_URL: str = _require("LOCAL_LLM_BASE_URL")
 
 SAMPLE_RATE: int   = int(os.getenv("SAMPLE_RATE", "16000"))
 LLM_MODEL: str     = os.getenv("LLM_MODEL", "gemini-2.5-flash")

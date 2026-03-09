@@ -18,7 +18,7 @@ import { AudioPlayer } from "./audio-player.js";
 // Config
 // ---------------------------------------------------------------------------
 
-const WS_URL = "ws://localhost:8000/ws/audio";
+const WS_URL = "ws://localhost:8002/ws/audio";
 const SAMPLE_RATE = 16000;
 
 // ---------------------------------------------------------------------------
@@ -180,6 +180,10 @@ async function startMic() {
     // Forward PCM chunks from Worklet → WebSocket
     workletNode.port.onmessage = (e) => {
         if (e.data.type === "pcm" && ws && ws.readyState === WebSocket.OPEN) {
+            if (!window._pcm_verified) {
+                console.info("DEBUGGER AGENT: Sending Raw PCM (Int16) buffer to backend. Size:", e.data.buffer.byteLength);
+                window._pcm_verified = true;
+            }
             ws.send(e.data.buffer);
         }
     };
