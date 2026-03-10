@@ -199,8 +199,45 @@ Open your browser at **[http://localhost:3000](http://localhost:3000)**
 
 ## Key Design Decisions
 
-- **No LiveKit / WebRTC** — pure WebSocket + Web Audio API for simplicity
-- **Raw PCM 16-bit** — minimal encoding overhead, directly accepted by Deepgram
-- **Sentence-level TTS chunking** — LLM tokens are buffered into complete sentences before TTS, keeping latency low while avoiding unnatural cutoffs
-- **Barge-in at TTS level** — interruption only fires when TTS audio is actively playing (`is_speaking` flag), not while the LLM is thinking
-- **`<think>` block handling** — reasoning models (DeepSeek R1, Qwen3) output reasoning inside `<think>` tags which are silently discarded; if no content remains, think content is used as fallback
+- **No LiveKit / WebRTC** — pure WebSocket + Web Audio API for simplicity and full control over the pipeline
+- **Raw PCM 16-bit** — minimal encoding overhead; directly accepted by Deepgram STT without any codec dependency
+- **Sentence-level TTS chunking** — LLM tokens are buffered into complete sentences before synthesizing, keeping first-audio latency low while avoiding unnatural mid-word cutoffs
+- **Barge-in at TTS level only** — interruption only fires when TTS audio is actively playing (`is_speaking` flag), preventing false triggers during LLM thinking
+- **`<think>` block filtering** — reasoning models (DeepSeek R1, Qwen3) emit reasoning inside `<think>` tags; these are silently discarded. If no content remains after filtering, the think content itself is used as a fallback so the user always gets a response
+
+---
+
+## Latency Considerations
+
+The system is designed to minimize the time from end-of-user-speech to first audio heard:
+
+| Stage | Latency Source | Mitigation |
+|---|---|---|
+| **STT** | Deepgram `endpointing=150ms` VAD | Aggressive endpoint detection; `speech_final` fires fast |
+| **LLM first token** | Model inference startup | Streaming SSE — first token sent as soon as generation begins |
+| **LLM → TTS** | Waiting for full response | **Sentence chunking** — TTS fires on first complete sentence, not full response |
+| **TTS audio** | REST round-trip + WAV generation | Streaming `aiter_bytes` — audio chunks forwarded as they arrive |
+| **Audio playback** | Browser buffer | PCM queued into Web Audio API, plays with minimal buffer |
+
+**Key insight:** The pipeline never waits for a full LLM response before speaking. A 4-sentence response starts playing after the first sentence (~300ms of LLM output), with subsequent sentences synthesized and queued in parallel.
+
+**Typical end-to-end latency breakdown:**
+- STT endpoint detection: ~150–300ms
+- LLM first sentence: ~500ms–1s (model-dependent)
+- TTS synthesis: ~200–400ms
+- **Total first-audio latency: ~1–2 seconds**
+
+---
+
+## Known Trade-offs
+
+| Trade-off | Decision | Reason |
+|---|---|---|
+| **Deepgram for STT/TTS** | External API services | Avoids implementing full ASR/TTS models locally; individual service APIs are within scope (no pipeline abstraction used) |
+| **No WebRTC** | Plain WebSocket | Simpler stack; WebRTC adds NAT traversal complexity not needed for localhost/LAN usage |
+| **Sentence chunking latency** | TTS fires per sentence, not per token | Per-token TTS would cause robotic, stuttering speech; sentences balance latency vs. naturalness |
+| **Single-turn context** | No conversation history sent to LLM | Keeps each request stateless and fast; multi-turn history would increase prompt size and LLM latency |
+| **VAD via Deepgram** | Not client-side | Offloads VAD accuracy to Deepgram's model rather than implementing a local energy-based detector |
+| **No RAG** | Not implemented | Bonus feature; the pipeline architecture supports adding a retrieval step before the LLM call |
+| **`python -m http.server`** | No HTTPS for frontend | TLS would be required for production mic access; adequate for local development |
+
