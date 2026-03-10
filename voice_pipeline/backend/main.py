@@ -107,6 +107,7 @@ async def _run_pipeline(
     transcript: str,
     ws: WebSocket,
     interrupt: InterruptionHandler,
+    set_speaking,   # callable(bool) to update the is_speaking flag in ws_audio
 ):
     """
     For a single final transcript, run LLM → TTS pipeline.
@@ -117,8 +118,6 @@ async def _run_pipeline(
     await _safe_send_text(ws, {"type": "state", "value": "thinking"})
 
     # Stream LLM sentences → TTS
-    await _safe_send_text(ws, {"type": "state", "value": "speaking"})
-
     async for sentence in stream_llm_sentences(
         transcript,
         interrupt.cancel_event,
@@ -130,7 +129,10 @@ async def _run_pipeline(
 
         # Send LLM chunk to UI for display
         await _safe_send_text(ws, {"type": "llm_chunk", "text": sentence})
+        await _safe_send_text(ws, {"type": "state", "value": "speaking"})
 
+        # Mark TTS as active — interruption is now allowed
+        set_speaking(True)
         # Synthesize and stream sentence audio
         success = await synthesize_sentence(
             sentence,
@@ -138,10 +140,14 @@ async def _run_pipeline(
             ws_send_bytes=lambda b: _safe_send_bytes(ws, b),
             ws_send_json=lambda d: _safe_send_text(ws, d),
         )
+        # TTS sentence done — disable interruption until next sentence
+        set_speaking(False)
+
         if not success:
             logger.warning("TTS failed for sentence")
 
     print(f"DEBUG: Pipeline FINISHED for: '{transcript}'")
+    set_speaking(False)
     if not interrupt.cancel_event.is_set():
         await _safe_send_text(ws, {"type": "state", "value": "listening"})
 
@@ -160,16 +166,24 @@ async def ws_audio(websocket: WebSocket):
     transcript_queue: asyncio.Queue[str] = asyncio.Queue()
     interrupt = InterruptionHandler(websocket, audio_queue)
 
+    # Track whether TTS is actively playing audio to the user.
+    # Interruption should ONLY fire during this window, not while LLM is thinking.
+    is_speaking = False
+
+    def set_speaking(value: bool) -> None:
+        nonlocal is_speaking
+        is_speaking = value
+
     # --- Interruption callback called by STT when speech is detected ---
     async def on_speech_started():
-        # Only interrupt if we are currently in "speaking" state
-        # (i.e., TTS is playing). The cancel_event being clear means
-        # we are in a fresh turn — don't interrupt ourselves.
+        # Only interrupt when TTS is ACTUALLY playing audio.
+        # Do NOT interrupt while LLM is thinking — that would kill
+        # the pipeline before any response is generated.
+        if not is_speaking:
+            return
         if interrupt.cancel_event.is_set():
             return  # already interrupted
-        # Check if there are active pipeline tasks (speaking)
-        if interrupt._active_tasks:
-            await interrupt.trigger()
+        await interrupt.trigger()
 
     # Dedicated event for STT so it survives turn interruptions
     client_disconnect_event = asyncio.Event()
@@ -202,7 +216,8 @@ async def ws_audio(websocket: WebSocket):
             # Run pipeline for this transcript
             print(f"DEBUG: Starting pipeline for: '{transcript}'")
             pipeline_task = asyncio.create_task(
-                _run_pipeline(transcript, websocket, interrupt)
+                _run_pipeline(transcript, websocket, interrupt,
+                              set_speaking=set_speaking)
             )
             interrupt.register_task(pipeline_task)
             try:

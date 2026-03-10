@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 _SENTENCE_END = re.compile(r'(?<=[.!?,\n])\s+')
 
 # Emit a chunk after this many words even if no punctuation has arrived yet.
-WORD_CHUNK_THRESHOLD = 10
+WORD_CHUNK_THRESHOLD = 4
 
 SYSTEM_PROMPT = (
     "You are a fast, highly conversational voice assistant. "
@@ -74,11 +74,13 @@ async def stream_llm_sentences(
     await on_state("thinking")
 
     buffer = ""
+    full_response = ""   # accumulate actual (non-think) output
+    think_buffer  = ""   # fallback: content inside <think> blocks
     headers = {
         "Authorization": f"Bearer {LOCAL_LLM_API_KEY}",
         "Content-Type": "application/json"
     }
-    
+
     payload = {
         "model": LLM_MODEL,
         "messages": [
@@ -89,8 +91,7 @@ async def stream_llm_sentences(
         "stream": True,
         "max_tokens": 300
     }
-    
-    # Optional trailing slash handling
+
     base_url = LOCAL_LLM_BASE_URL.rstrip('/')
     url = f"{base_url}/chat/completions"
 
@@ -100,58 +101,79 @@ async def stream_llm_sentences(
         async with httpx.AsyncClient(timeout=30.0) as client:
             async with client.stream("POST", url, headers=headers, json=payload) as response:
                 response.raise_for_status()
-                
+
                 async for line in response.aiter_lines():
                     if cancel_event.is_set():
                         logger.info("LLM streaming cancelled")
                         break
-                    
+
                     line = line.strip()
                     if not line or not line.startswith("data: "):
                         continue
-                        
+
                     data_str = line[6:]
                     if data_str == "[DONE]":
                         break
-                        
+
                     try:
                         chunk = json.loads(data_str)
-                        delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                        # Try common content fields for OpenAI-compatible servers
+                        delta = (
+                            chunk.get("choices", [{}])[0].get("delta", {}).get("content", "") or
+                            chunk.get("choices", [{}])[0].get("delta", {}).get("text", "") or
+                            chunk.get("choices", [{}])[0].get("text", "")
+                        )
                         if not delta:
                             continue
-                            
-                        # Handle streaming <think> tags by simply eating tokens while inside one
+
+                        # Handle streaming <think> tags — eat tokens inside the block
                         if "<think>" in delta:
                             in_think_block = True
-                            delta = delta.split("<think>")[-1] # take anything after (unlikely)
+                            # keep any content that came BEFORE <think>
+                            delta = delta.split("<think>")[0]
                         if "</think>" in delta:
                             in_think_block = False
-                            delta = delta.split("</think>")[-1] # take actual content after
-                            continue # skip this chunk just in case
-                            
+                            # keep any content that came AFTER </think>
+                            delta = delta.split("</think>")[-1]
+
                         if in_think_block:
+                            # Collect think content as a fallback in case there's
+                            # no response text after </think>
+                            think_buffer += delta
                             continue
-                            
+
+                        # Strip whitespace-only deltas that sneak through
+                        if not delta or not delta.strip():
+                            continue
+
                         buffer += delta
+                        full_response += delta
                         # Clean possible bold markers
                         buffer = buffer.replace("**", "").replace("*", "")
                         sentences, buffer = _split_sentences(buffer)
 
-                        # Word-count fallback
+                        # Word-count fallback — emit if buffer is long enough
                         if not sentences and len(buffer.split()) >= WORD_CHUNK_THRESHOLD:
                             sentences = [buffer.strip()]
                             buffer = ""
 
                         for sentence in sentences:
                             if sentence and not sentence.isspace():
-                                logger.debug(f"📤 LLM sentence: {sentence}")
+                                logger.debug(f"📤 LLM sentence: {sentence!r}")
                                 yield sentence
 
                     except json.JSONDecodeError:
                         continue
-                        
+
+        # Fallback: if the model ONLY output <think> content (no text after </think>),
+        # use the think content itself so the user still gets a response.
+        if not full_response.strip() and think_buffer.strip():
+            buffer = think_buffer.strip()
+            logger.info("Using think_buffer as fallback response")
+
         # Emit any remaining text as a final sentence
         if buffer.strip() and not cancel_event.is_set():
+            logger.debug(f"📤 LLM remainder: {buffer.strip()!r}")
             yield buffer.strip()
 
     except asyncio.CancelledError:
